@@ -32,6 +32,8 @@ class AuthController extends Controller
             'name' => 'required|string',
             'email' => 'required|string|unique:users,email',
             'password' => 'required|string|min:6',
+            'nim' => 'nullable|string|max:20',
+            'jurusan' => 'nullable|string|max:100',
         ]);
 
         $user = User::create([
@@ -39,6 +41,8 @@ class AuthController extends Controller
             'email' => $fields['email'],
             'password' => bcrypt($fields['password']),
             'role' => User::ROLE_USER,
+            'nim' => $fields['nim'] ?? null,
+            'jurusan' => $fields['jurusan'] ?? null,
         ]);
 
         $token = $user->createToken('access_token')->plainTextToken;
@@ -70,6 +74,8 @@ class AuthController extends Controller
             'email' => 'required|string|unique:users,email',
             'password' => 'required|string|min:6',
             'nik' => 'required|string|size:16|unique:users,nik',
+            'nim' => 'nullable|string|max:20',
+            'jurusan' => 'nullable|string|max:100',
             'no_telp' => 'required|string|max:15',
         ]);
 
@@ -79,6 +85,8 @@ class AuthController extends Controller
             'password' => bcrypt($fields['password']),
             'role' => User::ROLE_RELAWAN,
             'nik' => $fields['nik'],
+            'nim' => $fields['nim'] ?? null,
+            'jurusan' => $fields['jurusan'] ?? null,
             'no_telp' => $fields['no_telp'],
         ]);
 
@@ -244,6 +252,8 @@ class AuthController extends Controller
                 'email' => 'sometimes|string|unique:users,email,'.$id,
                 'password' => 'sometimes|string|min:6',
                 'nik' => 'sometimes|string|size:16|unique:users,nik,'.$id,
+                'nim' => 'nullable|string|max:20',
+                'jurusan' => 'nullable|string|max:100',
                 'no_telp' => 'sometimes|string|max:15',
             ]);
         } else {
@@ -251,6 +261,8 @@ class AuthController extends Controller
                 'name' => 'sometimes|string',
                 'email' => 'sometimes|string|unique:users,email,'.$id,
                 'password' => 'sometimes|string|min:6',
+                'nim' => 'nullable|string|max:20',
+                'jurusan' => 'nullable|string|max:100',
             ]);
         }
 
@@ -268,6 +280,14 @@ class AuthController extends Controller
         
         if(isset($fields['password'])) {
             $user->password = bcrypt($fields['password']);
+        }
+        
+        if(isset($fields['nim'])) {
+            $user->nim = $fields['nim'];
+        }
+        
+        if(isset($fields['jurusan'])) {
+            $user->jurusan = $fields['jurusan'];
         }
         
         if ($user->isRelawan()) {

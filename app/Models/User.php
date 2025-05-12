@@ -26,6 +26,8 @@ class User extends Authenticatable
         'password',
         'role',
         'nik',
+        'nim',
+        'jurusan',
         'no_telp',
     ];
 
