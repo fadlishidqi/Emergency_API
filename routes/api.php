@@ -3,15 +3,14 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ReportController;
 
-
-
-// Public routes
+// Route publik
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login'])->name('api.login');
 Route::post('/refresh', [AuthController::class, 'refreshToken']);
 
-// Protected routes (semua user terautentikasi)
+// Route terproteksi (untuk semua user terautentikasi)
 Route::middleware('auth:sanctum')->group(function () {
     // Profil user yang login
     Route::get('/profile', [AuthController::class, 'profile']);
@@ -23,7 +22,19 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users/{id}', [AuthController::class, 'show']);
     Route::put('/users/{id}', [AuthController::class, 'update']);
     
-    // Rute khusus Relawan
+    // ====== ROUTE UNTUK LAPORAN FOTO (BARU) ======
+    // CRUD Laporan Foto
+    Route::get('/reports', [ReportController::class, 'index']);
+    Route::post('/reports', [ReportController::class, 'store']);
+    Route::get('/reports/{report}', [ReportController::class, 'show']);
+    Route::put('/reports/{report}', [ReportController::class, 'update']);
+    Route::delete('/reports/{report}', [ReportController::class, 'destroy']);
+    
+    // Mendapatkan tipe masalah (untuk dropdown)
+    Route::get('/problem-types', [ReportController::class, 'getProblemTypes']);
+    // ============================================
+    
+    // Route khusus Relawan
     Route::middleware('relawan')->prefix('relawan')->group(function () {
         // Tambahkan rute spesifik untuk relawan di sini
         Route::get('/dashboard', function () {
@@ -31,7 +42,7 @@ Route::middleware('auth:sanctum')->group(function () {
         });
     });
     
-    // Rute khusus Admin
+    // Route khusus Admin
     Route::middleware('admin')->prefix('admin')->group(function () {
         // Manajemen User (hanya admin)
         Route::get('/users', [AuthController::class, 'getAllUsers']); // Regular users
