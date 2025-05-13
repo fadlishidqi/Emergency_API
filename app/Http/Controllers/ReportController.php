@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Report;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
@@ -15,28 +16,23 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         try {
-            // Logging untuk debugging
-            Log::info('User mengakses laporan', [
-                'user_id' => auth()->id(),
-                'role' => auth()->user()->role,
-                'request' => $request->all()
-            ]);
+            // Query sederhana tanpa model untuk memeriksa jika ada data
+            $dbReports = DB::table('reports')->get();
             
-            // Logika berbeda berdasarkan peran pengguna
+            if ($dbReports->isEmpty()) {
+                // Jika benar-benar tidak ada data di database
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Tidak ada laporan yang ditemukan',
+                    'reports' => [],
+                    'count' => 0
+                ]);
+            }
+            
+            // Jika ada data, kita ambil dengan cara biasa
             if (auth()->user()->isAdmin() || auth()->user()->isRelawan()) {
-                // Admin dan relawan dapat melihat semua laporan, dengan filter opsional
-                $query = Report::with('user');
-                
-                // Terapkan filter jika ada
-                if ($request->has('status') && !empty($request->status)) {
-                    $query->where('status', $request->status);
-                }
-                
-                if ($request->has('problem_type') && !empty($request->problem_type)) {
-                    $query->where('problem_type', $request->problem_type);
-                }
-                
-                $reports = $query->latest()->get(); // menggunakan get() daripada paginate untuk frontend
+                // Admin dan relawan dapat melihat semua laporan
+                $reports = Report::with('user')->latest()->get();
             } else {
                 // Pengguna biasa hanya bisa melihat laporan mereka sendiri
                 $reports = Report::where('user_id', auth()->id())
@@ -44,10 +40,11 @@ class ReportController extends Controller
                     ->latest()
                     ->get();
             }
-
+            
             // Transform data untuk frontend
-            $transformedReports = $reports->map(function ($report) {
-                return [
+            $transformedReports = [];
+            foreach ($reports as $report) {
+                $transformedReports[] = [
                     'id' => $report->id,
                     'user' => [
                         'id' => $report->user->id,
@@ -64,13 +61,14 @@ class ReportController extends Controller
                     'created_at' => $report->created_at->format('Y-m-d H:i:s'),
                     'updated_at' => $report->updated_at->format('Y-m-d H:i:s'),
                 ];
-            });
+            }
             
             return response()->json([
                 'success' => true,
-                'count' => $transformedReports->count(),
+                'count' => count($transformedReports),
                 'reports' => $transformedReports
             ]);
+            
         } catch (\Exception $e) {
             Log::error('Error saat mengambil laporan', [
                 'error' => $e->getMessage(),
@@ -79,7 +77,7 @@ class ReportController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Terjadi kesalahan saat mengambil data laporan',
+                'message' => 'Terjadi kesalahan saat mengambil data laporan: ' . $e->getMessage(),
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -142,7 +140,7 @@ class ReportController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Terjadi kesalahan saat membuat laporan',
+                'message' => 'Terjadi kesalahan saat membuat laporan: ' . $e->getMessage(),
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -151,7 +149,7 @@ class ReportController extends Controller
     /**
      * Menampilkan laporan tertentu.
      */
-    public function show(Request $request, $reportId)
+    public function show($reportId)
     {
         try {
             $report = Report::with('user')->findOrFail($reportId);
@@ -192,7 +190,7 @@ class ReportController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Terjadi kesalahan saat melihat laporan',
+                'message' => 'Terjadi kesalahan saat melihat laporan: ' . $e->getMessage(),
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
         }
@@ -280,7 +278,7 @@ class ReportController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Terjadi kesalahan saat memperbarui laporan',
+                'message' => 'Terjadi kesalahan saat memperbarui laporan: ' . $e->getMessage(),
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
         }
@@ -322,7 +320,7 @@ class ReportController extends Controller
             
             return response()->json([
                 'success' => false,
-                'message' => 'Terjadi kesalahan saat menghapus laporan',
+                'message' => 'Terjadi kesalahan saat menghapus laporan: ' . $e->getMessage(),
                 'error' => $e->getMessage()
             ], $e instanceof \Illuminate\Database\Eloquent\ModelNotFoundException ? 404 : 500);
         }
@@ -333,21 +331,33 @@ class ReportController extends Controller
      */
     public function getProblemTypes()
     {
-        // Daftar tipe masalah yang telah ditentukan
-        $problemTypes = [
-            'infrastructure' => 'Infrastruktur',
-            'electricity' => 'Listrik',
-            'water_supply' => 'Sumber Air',
-            'waste_management' => 'Pengelolaan Sampah',
-            'public_safety' => 'Keamanan Publik',
-            'public_health' => 'Kesehatan Publik',
-            'environmental' => 'Lingkungan',
-            'other' => 'Lainnya'
-        ];
-        
-        return response()->json([
-            'success' => true,
-            'problem_types' => $problemTypes
-        ]);
+        try {
+            // Daftar tipe masalah yang telah ditentukan
+            $problemTypes = [
+                'infrastructure' => 'Infrastruktur',
+                'electricity' => 'Listrik',
+                'water_supply' => 'Sumber Air',
+                'waste_management' => 'Pengelolaan Sampah',
+                'public_safety' => 'Keamanan Publik',
+                'public_health' => 'Kesehatan Publik',
+                'environmental' => 'Lingkungan',
+                'other' => 'Lainnya'
+            ];
+            
+            return response()->json([
+                'success' => true,
+                'problem_types' => $problemTypes
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error saat mengambil tipe masalah', [
+                'error' => $e->getMessage()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengambil daftar tipe masalah',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 }
