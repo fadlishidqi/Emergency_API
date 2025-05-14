@@ -22,13 +22,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users/{id}', [AuthController::class, 'show']);
     Route::put('/users/{id}', [AuthController::class, 'update']);
     
+    // Upload foto (endpoint baru)
+    Route::post('/upload-photo', [ReportController::class, 'uploadPhoto']);
+    
     // ====== ROUTE UNTUK LAPORAN FOTO (BARU) ======
     // CRUD Laporan Foto
     Route::get('/reports', [ReportController::class, 'index']);
     Route::post('/reports', [ReportController::class, 'store']);
-    Route::get('/reports/{report}', [ReportController::class, 'show']);
-    Route::put('/reports/{report}', [ReportController::class, 'update']);
-    Route::delete('/reports/{report}', [ReportController::class, 'destroy']);
+    Route::get('/reports/{reportId}', [ReportController::class, 'show']);
+    Route::put('/reports/{reportId}', [ReportController::class, 'update']);
+    Route::delete('/reports/{reportId}', [ReportController::class, 'destroy']);
     
     // Mendapatkan tipe masalah (untuk dropdown)
     Route::get('/problem-types', [ReportController::class, 'getProblemTypes']);

@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class ReportController extends Controller
 {
@@ -21,12 +22,7 @@ class ReportController extends Controller
             
             if ($dbReports->isEmpty()) {
                 // Jika benar-benar tidak ada data di database
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Tidak ada laporan yang ditemukan',
-                    'reports' => [],
-                    'count' => 0
-                ]);
+                return response()->json([]);
             }
             
             // Jika ada data, kita ambil dengan cara biasa
@@ -53,6 +49,7 @@ class ReportController extends Controller
                         'role' => $report->user->role,
                     ],
                     'photo_url' => $report->photo_url,
+                    'photo_path' => $report->photo_path,
                     'location' => $report->location,
                     'problem_type' => $report->problem_type,
                     'description' => $report->description,
@@ -63,11 +60,8 @@ class ReportController extends Controller
                 ];
             }
             
-            return response()->json([
-                'success' => true,
-                'count' => count($transformedReports),
-                'reports' => $transformedReports
-            ]);
+            // Langsung kembalikan array tanpa wrapper tambahan
+            return response()->json($transformedReports);
             
         } catch (\Exception $e) {
             Log::error('Error saat mengambil laporan', [
@@ -76,9 +70,7 @@ class ReportController extends Controller
             ]);
             
             return response()->json([
-                'success' => false,
-                'message' => 'Terjadi kesalahan saat mengambil data laporan: ' . $e->getMessage(),
-                'error' => $e->getMessage()
+                'error' => 'Terjadi kesalahan saat mengambil data laporan: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -89,28 +81,36 @@ class ReportController extends Controller
     public function store(Request $request)
     {
         try {
-            $request->validate([
-                'photo' => 'required|image|max:5120', // max 5MB
+            // Validasi data yang masuk dengan problem_type yang opsional
+            $validator = Validator::make($request->all(), [
+                'photo_path' => 'required|string',
                 'location' => 'required|string|max:255',
-                'problem_type' => 'required|string|max:100',
+                'problem_type' => 'nullable|string|max:100',
                 'description' => 'required|string|max:1000',
             ]);
 
-            // Tangani upload foto
-            $photoPath = $request->file('photo')->store('reports', 'public');
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validasi gagal',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
 
-            // Buat laporan
+            // Buat laporan dengan default kosong jika tidak ada problem_type
             $report = Report::create([
                 'user_id' => auth()->id(),
-                'photo_path' => $photoPath,
+                'photo_path' => $request->photo_path,
                 'location' => $request->location,
-                'problem_type' => $request->problem_type,
+                'problem_type' => $request->problem_type ?? '',
                 'description' => $request->description,
+                'status' => 'pending', // Default status
             ]);
 
             // Load the user relation
             $report->load('user');
 
+            // Kembalikan format lama untuk kompatibilitas
             return response()->json([
                 'success' => true,
                 'message' => 'Laporan berhasil dibuat',
@@ -123,6 +123,7 @@ class ReportController extends Controller
                         'role' => $report->user->role,
                     ],
                     'photo_url' => $report->photo_url,
+                    'photo_path' => $report->photo_path,
                     'location' => $report->location,
                     'problem_type' => $report->problem_type,
                     'description' => $report->description,
@@ -147,6 +148,50 @@ class ReportController extends Controller
     }
 
     /**
+     * Upload foto untuk laporan.
+     * Method ini digunakan sebelum membuat laporan.
+     */
+    public function uploadPhoto(Request $request)
+    {
+        try {
+            // Validasi file foto
+            $validator = Validator::make($request->all(), [
+                'photo' => 'required|image|max:5120', // max 5MB
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validasi gagal',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            // Upload foto
+            $photoPath = $request->file('photo')->store('reports', 'public');
+
+            // Kembalikan format lama untuk kompatibilitas
+            return response()->json([
+                'success' => true,
+                'message' => 'Foto berhasil diupload',
+                'photo_path' => $photoPath,
+                'photo_url' => url('storage/' . $photoPath)
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error saat mengupload foto', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengupload foto: ' . $e->getMessage(),
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Menampilkan laporan tertentu.
      */
     public function show($reportId)
@@ -162,6 +207,7 @@ class ReportController extends Controller
                 ], 403);
             }
             
+            // Kembalikan format lama untuk kompatibilitas
             return response()->json([
                 'success' => true,
                 'report' => [
@@ -173,6 +219,7 @@ class ReportController extends Controller
                         'role' => $report->user->role,
                     ],
                     'photo_url' => $report->photo_url,
+                    'photo_path' => $report->photo_path,
                     'location' => $report->location,
                     'problem_type' => $report->problem_type,
                     'description' => $report->description,
@@ -207,34 +254,43 @@ class ReportController extends Controller
             // Periksa otorisasi
             if (auth()->user()->isAdmin() || auth()->user()->isRelawan()) {
                 // Admin dan relawan dapat memperbarui status dan catatan
-                $validatedData = $request->validate([
+                $validator = Validator::make($request->all(), [
                     'status' => 'sometimes|required|in:pending,in_progress,resolved,rejected',
                     'admin_notes' => 'sometimes|nullable|string|max:1000',
                 ]);
                 
-                $report->update($validatedData);
+                if ($validator->fails()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Validasi gagal',
+                        'errors' => $validator->errors()
+                    ], 422);
+                }
+                
+                $report->update($validator->validated());
                 
             } elseif (auth()->id() === $report->user_id && $report->status === 'pending') {
                 // Pengguna hanya dapat memperbarui laporan mereka sendiri yang masih pending
-                $validatedData = $request->validate([
+                $validator = Validator::make($request->all(), [
                     'location' => 'sometimes|required|string|max:255',
-                    'problem_type' => 'sometimes|required|string|max:100',
+                    'problem_type' => 'nullable|string|max:100',
                     'description' => 'sometimes|required|string|max:1000',
+                    'photo_path' => 'sometimes|required|string',
                 ]);
                 
-                // Periksa apakah foto baru diunggah
-                if ($request->hasFile('photo')) {
-                    $request->validate([
-                        'photo' => 'image|max:5120', // max 5MB
-                    ]);
-                    
-                    // Hapus foto lama jika ada
-                    if ($report->photo_path) {
-                        Storage::disk('public')->delete($report->photo_path);
-                    }
-                    
-                    $photoPath = $request->file('photo')->store('reports', 'public');
-                    $validatedData['photo_path'] = $photoPath;
+                if ($validator->fails()) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Validasi gagal',
+                        'errors' => $validator->errors()
+                    ], 422);
+                }
+                
+                $validatedData = $validator->validated();
+                
+                // Pastikan problem_type tidak null
+                if (isset($validatedData['problem_type']) && $validatedData['problem_type'] === null) {
+                    $validatedData['problem_type'] = '';
                 }
                 
                 $report->update($validatedData);
@@ -249,6 +305,7 @@ class ReportController extends Controller
             // Load the user relation
             $report->load('user');
 
+            // Kembalikan format lama untuk kompatibilitas
             return response()->json([
                 'success' => true,
                 'message' => 'Laporan berhasil diperbarui',
@@ -261,6 +318,7 @@ class ReportController extends Controller
                         'role' => $report->user->role,
                     ],
                     'photo_url' => $report->photo_url,
+                    'photo_path' => $report->photo_path,
                     'location' => $report->location,
                     'problem_type' => $report->problem_type,
                     'description' => $report->description,
@@ -307,6 +365,7 @@ class ReportController extends Controller
             
             $report->delete();
             
+            // Kembalikan format lama untuk kompatibilitas
             return response()->json([
                 'success' => true,
                 'message' => 'Laporan berhasil dihapus',
@@ -344,6 +403,7 @@ class ReportController extends Controller
                 'other' => 'Lainnya'
             ];
             
+            // Kembalikan format lama untuk kompatibilitas
             return response()->json([
                 'success' => true,
                 'problem_types' => $problemTypes
